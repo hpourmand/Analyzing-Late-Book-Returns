@@ -1,74 +1,146 @@
-CREATE TEMPORARY TABLE temp_customers AS
-SELECT *
+---Display basic information
+Describe customers;
+
+
+
+---Identify Duplicates
+SELECT 
+    id, name, street_address, city, state, zipcode, birth_date, gender, education, occupation, COUNT(*) AS count_duplicates
+FROM books
+GROUP BY title, authors, publisher, categories
+HAVING COUNT(*) > 1;
+
+
+---Remove duplicates:
+WITH numbered_rows AS (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY id 
+								 ORDER BY id) AS row_num
+    FROM customers
+)
+DELETE FROM numbered_rows
+WHERE row_num > 1;
+
+
+---Check for missing values
+SELECT 
+    SUM(CASE WHEN city IS NULL THEN 1 ELSE 0 END) AS missing_city,
+    SUM(CASE WHEN state IS NULL THEN 1 ELSE 0 END) AS missing_state,
+    SUM(CASE WHEN education IS NULL THEN 1 ELSE 0 END) AS missing_education,
+    SUM(CASE WHEN occupation IS NULL THEN 1 ELSE 0 END) AS missing_occupation,
+    SUM(CASE WHEN birth_date IS NULL THEN 1 ELSE 0 END) AS missing_birth_date
 FROM customers;
 
--- Dropping duplicates
-DELETE FROM temp_customers
-WHERE rowid NOT IN (
-    SELECT MIN(rowid)
-    FROM temp_customers
-    GROUP BY -- List all columns that you consider as duplicates
-    city, state, education, occupation, birth_date
-);
 
--- Filling missing values
-UPDATE temp_customers
+
+---Filling missing values
+UPDATE customers
 SET city = COALESCE(city, 'Unknown'),
     state = COALESCE(state, 'Unknown'),
     education = COALESCE(education, 'Others'),
-    occupation = COALESCE(occupation, 'Not Provided'),
-    birth_date = COALESCE(birth_date, (SELECT MAX(birth_date) FROM temp_customers)); -- Use MAX or another suitable method
+    occupation = COALESCE(occupation, 'Not Provided');
 
--- Filtering dates
-DELETE FROM temp_customers
+
+
+---Fill birth_date with the mode:
+WITH ModeCTE AS (
+    SELECT birth_date, COUNT(*) AS count
+    FROM customers
+    WHERE birth_date IS NOT NULL
+    GROUP BY birth_date
+    ORDER BY count DESC
+    LIMIT 1
+)
+UPDATE customers
+SET birth_date = (SELECT birth_date FROM ModeCTE)
+WHERE birth_date IS NULL;
+
+
+
+---Filter rows based on date range
+DELETE FROM customers
 WHERE birth_date < '1900-01-01' OR birth_date > '2020-12-29';
 
--- Dropping rows with other missing values
-DELETE FROM temp_customers
+
+
+--- Drop rows with other missing values
+DELETE FROM customers
 WHERE city IS NULL
    OR state IS NULL
    OR education IS NULL
    OR occupation IS NULL
    OR birth_date IS NULL;
 
--- Standardizing values in columns
-UPDATE temp_customers
-SET gender = CASE
-                 WHEN LOWER(gender) = 'female' THEN 'FEMALE'
-                 WHEN LOWER(gender) = 'male' THEN 'MALE'
-                 ELSE gender
-             END,
-    city = CASE
-               WHEN UPPER(city) = 'PORTLAND' THEN 'Portland'
-               ELSE city
-           END,
-    state = CASE
-                WHEN UPPER(state) = 'OREGON' THEN 'Oregon'
-                WHEN LOWER(state) = 'washington' THEN 'Washington'
-                ELSE state
-            END,
-    education = CASE
-                    WHEN UPPER(education) IN ('COLLEGE', 'SCHOOL', 'HIGH', 'GRADUATE', 'DEGREE') THEN 'Graduate'
-                    ELSE education
-                END,
-    occupation = CASE
-                    WHEN UPPER(occupation) IN ('TECH', 'COLLAR', 'SUPPORT', 'ADMIN', 'BLUE', 'FINANCE', 'EDUCATION', 'SALES') THEN 'Sales'
-                    ELSE occupation
+
+---Standardize column values
+--Gender
+UPDATE customers
+SET gender = REPLACE(LOWER(gender), 'female', 'FEMALE');
+UPDATE customers
+SET gender = REPLACE(LOWER(gender), 'male', 'MALE');
+
+--City
+UPDATE customers
+SET city = REPLACE(LOWER(city), 'portland', 'Portland');
+
+--State
+UPDATE customers
+SET state = CASE
+               WHEN LOWER(state) = 'oregon' THEN 'Oregon'
+               WHEN LOWER(state) = 'washington' THEN 'Washington'
+               ELSE state
+            END;
+
+
+--Education
+UPDATE customers
+SET education = CASE
+                   WHEN education LIKE '%COLLEGE%' THEN 'College'
+                   WHEN education LIKE '%SCHOOL%' THEN 'School'
+                   WHEN education LIKE '%HIGH%' THEN 'High'
+                   WHEN education LIKE '%GRADUATE%' THEN 'Graduate'
+                   WHEN education LIKE '%DEGREE%' THEN 'Degree'
+                   ELSE 'Others'
+               END;
+
+
+--Occupation
+UPDATE customers
+SET occupation = CASE
+                    WHEN LOWER(occupation) LIKE '%tech%' THEN 'Tech'
+                    WHEN LOWER(occupation) LIKE '%sales%' THEN 'Sales'
+                    ELSE 'Others'
                  END;
 
--- Cleaning up columns by stripping unwanted characters and whitespace
-UPDATE temp_customers
-SET zipcode = TRIM(REPLACE(zipcode, '.', '')),
-    name = TRIM(REPLACE(name, '_#-', '')),
-    gender = TRIM(REPLACE(gender, '_#-', '')),
-    city = TRIM(REPLACE(city, '_#-', '')),
-    street_address = TRIM(REPLACE(street_address, '_#-', '')),
-    state = TRIM(REPLACE(state, '_#-', '')),
-    birth_date = TRIM(REPLACE(birth_date, '_#-', '')),
-    education = TRIM(REPLACE(education, '_#-', '')),
-    occupation = TRIM(REPLACE(occupation, '_#-', ''));
 
--- Saving cleaned data back to a table
-CREATE TABLE cleaned_customers AS
+---Clean up columns
+UPDATE customers
+SET zipcode = TRIM(BOTH '-' FROM TRIM(BOTH '#' FROM TRIM(BOTH '_' FROM zipcode))),
+    name = TRIM(BOTH '-' FROM TRIM(BOTH '#' FROM TRIM(BOTH '_' FROM name))),
+    gender = TRIM(BOTH '-' FROM TRIM(BOTH '#' FROM TRIM(BOTH '_' FROM gender))),
+    city = TRIM(BOTH '-' FROM TRIM(BOTH '#' FROM TRIM(BOTH '_' FROM city))),
+    street_address = TRIM(BOTH '-' FROM TRIM(BOTH '#' FROM TRIM(BOTH '_' FROM street_address))),
+    state = TRIM(BOTH '-' FROM TRIM(BOTH '#' FROM TRIM(BOTH '_' FROM state))),
+    birth_date = TRIM(BOTH '-' FROM TRIM(BOTH '#' FROM TRIM(BOTH '_' FROM birth_date))),
+    education = TRIM(BOTH '-' FROM TRIM(BOTH '#' FROM TRIM(BOTH '_' FROM education))),
+    occupation = TRIM(BOTH '-' FROM TRIM(BOTH '#' FROM TRIM(BOTH '_' FROM occupation)));
+
+
+---Convert 'zipcode' column to integer
+UPDATE customers
+SET zipcode = CAST(SUBSTRING_INDEX(zipcode, '.', 1) AS UNSIGNED);
+
+
+---Import Data
 SELECT *
-FROM temp_customers;
+INTO OUTFILE '/path/to/cleaned_customers.csv'
+FIELDS TERMINATED BY ',' 
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+FROM customers;
+
+
+
+
+
+
+

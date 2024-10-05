@@ -130,7 +130,7 @@ UPDATE customers
 SET zipcode = CAST(SUBSTRING_INDEX(zipcode, '.', 1) AS UNSIGNED);
 
 
----Import Data
+---Export Data
 SELECT *
 INTO OUTFILE '/path/to/cleaned_customers.csv'
 FIELDS TERMINATED BY ',' 

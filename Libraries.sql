@@ -85,8 +85,8 @@ SET name = TRIM(BOTH '-' FROM TRIM(BOTH '#' FROM TRIM(BOTH '_' FROM name))),
     postal_code = TRIM(BOTH '-' FROM TRIM(BOTH '#' FROM TRIM(BOTH '_' FROM postal_code)));
 
 							 
----Import Data
-							 SELECT * 
+---Export Data
+SELECT * 
 INTO OUTFILE '/path/to/cleaned_libraries.csv'
 FIELDS TERMINATED BY ',' 
 ENCLOSED BY '"'

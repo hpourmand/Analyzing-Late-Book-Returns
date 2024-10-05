@@ -1,57 +1,71 @@
-CREATE TABLE cleaned_checkouts AS
-SELECT DISTINCT
-    id,
-    patron_id,
-    library_id,
-    date_checkout,
-    date_returned
+---Display basic information
+Describe checkouts;
+
+---Identify duplicates
+SELECT id, patron_id, library_id, date_checkout, date_returned, COUNT(*) AS duplicate_count
+FROM checkouts
+GROUP BY id, patron_id, library_id, date_checkout, date_returned
+HAVING COUNT(*) > 1;
+
+
+---Remove duplicates
+WITH CTE AS (
+    SELECT *, 
+           ROW_NUMBER() OVER (PARTITION BY id, patron_id, library_id, date_checkout, date_returned 
+                              ORDER BY (SELECT NULL)) AS row_num
+    FROM checkouts
+)
+DELETE FROM checkouts
+WHERE id IN (SELECT id FROM CTE WHERE row_num > 1);
+
+
+---Check for missing values
+SELECT 
+    SUM(CASE WHEN date_checkout IS NULL THEN 1 ELSE 0 END) AS missing_date_checkout,
+    SUM(CASE WHEN date_returned IS NULL THEN 1 ELSE 0 END) AS missing_date_returned
 FROM checkouts;
 
--- Finding and removing duplicate rows across all columns
-WITH cte AS (
-    SELECT id, patron_id, library_id, date_checkout, date_returned,
-           ROW_NUMBER() OVER (PARTITION BY id, patron_id, library_id, date_checkout, date_returned ORDER BY id) AS row_num
-    FROM cleaned_checkouts
-)
-DELETE FROM cleaned_checkouts
-WHERE id IN (
-    SELECT id FROM cte WHERE row_num > 1
-);
 
--- Checking missing values
-SELECT 
-    COUNT(*) AS total_rows,
-    COUNT(date_checkout) AS valid_date_checkout,
-    COUNT(date_returned) AS valid_date_returned,
-    (COUNT(*) - COUNT(date_checkout)) AS missing_date_checkout,
-    (COUNT(*) - COUNT(date_returned)) AS missing_date_returned
-FROM cleaned_checkouts;
-
--- Removing rows with missing values
-DELETE FROM cleaned_checkouts
+---Remove rows where date_checkout or date_returned is NULL
+DELETE FROM checkouts
 WHERE date_checkout IS NULL OR date_returned IS NULL;
 
--- Filtering by date range
-DELETE FROM cleaned_checkouts
-WHERE date_checkout < '2017-01-01' 
-OR date_checkout > '2020-12-24'
-OR date_returned < '2017-01-01' 
-OR date_returned > '2020-12-24';
 
--- Ensuring date_checkout is before date_returned
-DELETE FROM cleaned_checkouts
+---Filter rows based on a date range
+DELETE FROM checkouts
+WHERE date_checkout < '2017-01-01' 
+   OR date_checkout > '2020-12-24'
+   OR date_returned < '2017-01-01'
+   OR date_returned > '2020-12-24';
+
+
+---Ensure 'date_checkout' is before 'date_returned'
+DELETE FROM checkouts
 WHERE date_checkout >= date_returned;
 
--- Cleaning up the columns
-UPDATE cleaned_checkouts
-SET 
-    id = TRIM(REPLACE(id, '/', '-')),
-    patron_id = TRIM(REPLACE(patron_id, '/', '-')),
-    library_id = TRIM(REPLACE(library_id, '/', '-')),
-    date_checkout = TRIM(REPLACE(date_checkout, '/', '-')),
-    date_returned = TRIM(REPLACE(date_returned, '/', '-'));
 
--- Converting data formats
-UPDATE cleaned_checkouts
-SET date_checkout = TO_CHAR(TO_DATE(date_checkout, 'YYYY-MM-DD'), 'YYYY-MM-DD'),
-    date_returned = TO_CHAR(TO_DATE(date_returned, 'YYYY-MM-DD'), 'YYYY-MM-DD');
+
+---Clean up columns
+UPDATE checkouts
+SET id = TRIM(BOTH '-' FROM REPLACE(REPLACE(REPLACE(id, '|', '-'), '/', '-'), ' ', '-')),
+    patron_id = TRIM(BOTH '-' FROM REPLACE(REPLACE(REPLACE(patron_id, '|', '-'), '/', '-'), ' ', '-')),
+    library_id = TRIM(BOTH '-' FROM REPLACE(REPLACE(REPLACE(library_id, '|', '-'), '/', '-'), ' ', '-')),
+    date_checkout = TRIM(BOTH '-' FROM REPLACE(REPLACE(REPLACE(date_checkout, '|', '-'), '/', '-'), ' ', '-')),
+    date_returned = TRIM(BOTH '-' FROM REPLACE(REPLACE(REPLACE(date_returned, '|', '-'), '/', '-'), ' ', '-'));
+
+
+
+---Convert 'date_checkout' and 'date_returned' to datetime format
+UPDATE checkouts
+SET date_checkout = COALESCE(DATE_FORMAT(STR_TO_DATE(date_checkout, '%Y-%m-%d'), '%Y-%m-%d'), ''),
+    date_returned = COALESCE(DATE_FORMAT(STR_TO_DATE(date_returned, '%Y-%m-%d'), '%Y-%m-%d'), '');
+
+
+
+---Export data
+SELECT *
+INTO OUTFILE '/path/to/cleaned_checkouts.csv'
+FIELDS TERMINATED BY ',' 
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+FROM checkouts;

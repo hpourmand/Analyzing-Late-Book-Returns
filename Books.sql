@@ -1,3 +1,7 @@
+---Display basic information
+DESCRIBE books;
+
+
 ---Identify Duplicates
 SELECT 
     title, authors, publisher, categories, COUNT(*) AS count_duplicates

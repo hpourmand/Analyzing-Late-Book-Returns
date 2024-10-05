@@ -1,58 +1,103 @@
-CREATE TABLE cleaned_books AS
-SELECT DISTINCT title, authors, publisher, categories, price, publishedDate, pages
+---Identify Duplicates
+SELECT 
+    title, authors, publisher, categories, COUNT(*) AS count_duplicates
+FROM books
+GROUP BY title, authors, publisher, categories
+HAVING COUNT(*) > 1;
+
+
+---Remove Duplicates
+WITH numbered_rows AS (
+    SELECT *,
+           ROW_NUMBER() OVER (
+               PARTITION BY title, authors, publisher, categories 
+               ORDER BY book_id 
+           ) AS row_num
+    FROM books
+)
+DELETE FROM numbered_rows
+ WHERE row_num > 1;
+
+---Check for missing values
+SELECT 
+    SUM(CASE WHEN authors IS NULL THEN 1 ELSE 0 END) AS missing_authors,
+    SUM(CASE WHEN publisher IS NULL THEN 1 ELSE 0 END) AS missing_publisher,
+    SUM(CASE WHEN categories IS NULL THEN 1 ELSE 0 END) AS missing_categories,
+    SUM(CASE WHEN price IS NULL THEN 1 ELSE 0 END) AS missing_price,
+    SUM(CASE WHEN publishedDate IS NULL THEN 1 ELSE 0 END) AS missing_publishedDate
 FROM books;
 
--- Filling missing values in 'authors' and 'publisher' with 'Unknown'
-UPDATE cleaned_books
-SET authors = 'Unknown'
-WHERE authors IS NULL;
 
-UPDATE cleaned_books
-SET publisher = 'Unknown'
-WHERE publisher IS NULL;
+---Fill missing values
+UPDATE books
+SET authors = COALESCE(authors, 'Unknown'),
+    publisher = COALESCE(publisher, 'Unknown');
 
--- The most common category
-WITH most_common_category AS (
+---Fill missing categories with the most common category
+WITH most_common AS (
     SELECT categories
-    FROM cleaned_books
+    FROM books
+    WHERE categories IS NOT NULL
     GROUP BY categories
     ORDER BY COUNT(*) DESC
     LIMIT 1
 )
-
--- Filling missing 'categories' with the most common category
-UPDATE cleaned_books
-SET categories = (SELECT categories FROM most_common_category)
+UPDATE books
+SET categories = (SELECT categories FROM most_common)
 WHERE categories IS NULL;
 
--- Dropping rows with missing 'price' or 'publishedDate'
-DELETE FROM cleaned_books
+--Drop rows where price or publishedDate is NULL
+DELETE FROM books
 WHERE price IS NULL OR publishedDate IS NULL;
 
--- Cleaning up columns by stripping unwanted characters and whitespace using REGEXP_REPLACE for pattern-based cleaning
-UPDATE cleaned_books
-SET 
-    title = TRIM(REGEXP_REPLACE(title, '[^\w\s]', '')),
-    authors = TRIM(REGEXP_REPLACE(authors, '[^\w\s]', '')),
-    publisher = TRIM(REGEXP_REPLACE(publisher, '[^\w\s]', '')),
-    publishedDate = TRIM(REGEXP_REPLACE(publishedDate, '[^\w\s]', '')),
-    categories = TRIM(REGEXP_REPLACE(categories, '[^\w\s]', '')),
-    price = TRIM(REGEXP_REPLACE(price, '[^\w\s]', '')),
-    pages = TRIM(REGEXP_REPLACE(pages, '[^\w\s]', ''));
 
--- Converting 'publishedDate' to the year and handle invalid dates with a check using TRY_CAST
-UPDATE cleaned_books
-SET publishedDate = CASE
-    WHEN TRY_CAST(publishedDate AS DATE) IS NOT NULL
-    THEN EXTRACT(YEAR FROM CAST(publishedDate AS DATE))
-    ELSE 0
-END;
+---Clean up columns
+UPDATE books
+SET title = TRIM(BOTH ' USD*$^#|' FROM title),
+    authors = TRIM(BOTH ' USD*$^#|' FROM authors),
+    publisher = TRIM(BOTH ' USD*$^#|' FROM publisher),
+    publishedDate = TRIM(BOTH ' USD*$^#|' FROM publishedDate),
+    categories = TRIM(BOTH ' USD*$^#|' FROM categories),
+    price = TRIM(BOTH ' USD*$^#|' FROM price),
+    pages = TRIM(BOTH ' USD*$^#|' FROM pages);
 
--- Consolidating similar categories using a CASE statement to standardize categories
-UPDATE cleaned_books
+
+---Convert 'publishedDate' to year and remove rows with 0 year
+UPDATE books
+SET publishedDate = YEAR(STR_TO_DATE(publishedDate, '%Y-%m-%d'))
+WHERE publishedDate IS NOT NULL;
+
+DELETE FROM books
+WHERE publishedDate = 0;
+
+
+---Consolidate categories
+UPDATE books
 SET categories = CASE
     WHEN LOWER(categories) LIKE '%advertising%' THEN 'Advertising'
     WHEN LOWER(categories) LIKE '%mechanics%' THEN 'Mechanics'
     WHEN LOWER(categories) LIKE '%business & economics%' THEN 'Business & Economics'
     WHEN LOWER(categories) LIKE '%science%' THEN 'Science'
-    WHEN LOWER(categories) LIKE '%technology%' THEN 'Technology & Engineering
+    WHEN LOWER(categories) LIKE '%technology%' THEN 'Technology & Engineering'
+    WHEN LOWER(categories) LIKE '%engineering%' THEN 'Technology & Engineering'
+    WHEN LOWER(categories) LIKE '%mathematics%' THEN 'Mathematics'
+    WHEN LOWER(categories) LIKE '%social science%' THEN 'Social Science'
+    WHEN LOWER(categories) LIKE '%psychology%' THEN 'Psychology'
+    WHEN LOWER(categories) LIKE '%political science%' THEN 'Political Science'
+    WHEN LOWER(categories) LIKE '%art%' THEN 'Art'
+    WHEN LOWER(categories) LIKE '%language arts%' THEN 'Language Arts & Disciplines'
+    WHEN LOWER(categories) LIKE '%government publications%' THEN 'Government Publications'
+    WHEN LOWER(categories) LIKE '%fiction%' THEN 'Fiction'
+    ELSE 'Uncategorized'
+END;
+
+
+
+---Export data
+SELECT *
+INTO OUTFILE '/path/to/cleaned_books.csv'
+FIELDS TERMINATED BY ',' 
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+FROM books;
+

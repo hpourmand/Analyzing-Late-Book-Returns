@@ -3,7 +3,7 @@ Describe customers;
 
 
 
----Identify Duplicates
+---Identify duplicates
 SELECT 
     id, name, street_address, city, state, zipcode, birth_date, gender, education, occupation, COUNT(*) AS count_duplicates
 FROM books
@@ -11,7 +11,7 @@ GROUP BY title, authors, publisher, categories
 HAVING COUNT(*) > 1;
 
 
----Remove duplicates:
+---Remove duplicates
 WITH numbered_rows AS (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY id 
 								 ORDER BY id) AS row_num
